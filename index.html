@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Guidance & Analyzer</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/matchbrackets.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-dark: #1e1e2e;
+            --bg-panel: #282a36;
+            --text-main: #f8f8f2;
+            --accent: #bd93f9;
+            --success: #50fa7b;
+            --error: #ff5555;
+            --border: #44475a;
+            --terminal-bg: #11111b;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--bg-panel);
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .nav-left { display: flex; align-items: center; gap: 15px; }
+        .nav-left h1 { margin: 0; color: var(--accent); font-size: 20px; }
+
+        select#view-selector {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            padding: 8px 15px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .settings-btn {
+            background: none;
+            border: none;
+            color: var(--text-main);
+            font-size: 24px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .settings-btn:hover { color: var(--accent); }
+
+        .container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .view-section {
+            display: none;
+            flex: 1;
+            width: 100%;
+            height: 100%;
+        }
+        .view-section.active { display: flex; }
+
+        .sidebar {
+            width: 250px;
+            background-color: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            padding: 10px;
+            overflow-y: auto;
+        }
+        
+        .main-editor-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            gap: 15px;
+        }
+
+        .CodeMirror {
+            flex: 1;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            font-size: 15px;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+
+        .bottom-panel {
+            height: 250px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .terminal, .ai-insights {
+            flex: 1;
+            background-color: var(--terminal-bg);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+        }
+
+        .terminal-header {
+            color: var(--accent);
+            font-weight: bold;
+            margin-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 5px;
+        }
+
+        .run-btn {
+            background-color: var(--accent);
+            color: #000;
+            border: none;
+            padding: 8px 15px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            align-self: flex-start;
+        }
+        .run-btn:hover { background-color: #a378ea; }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: var(--bg-panel);
+            padding: 20px;
+            border-radius: 8px;
+            width: 400px;
+            border: 1px solid var(--border);
+            position: relative;
+        }
+        .modal input { width: 95%; padding: 10px; margin: 15px 0; background: var(--bg-dark); color: white; border: 1px solid var(--border); }
+        .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; }
+        .btn-cancel { background: transparent; border: 1px solid var(--border); color: white; padding: 8px 15px; cursor: pointer; }
+        
+        .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            color: var(--text-main);
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .close-btn:hover { color: var(--error); }
+
+        .solution-code-box {
+            background: #000;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            border: 1px solid var(--border);
+            margin-bottom: 15px;
+        }
+
+        .file-item {
+            padding: 8px;
+            cursor: pointer;
+            color: var(--text-main);
+            border-radius: 4px;
+            margin-bottom: 2px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .file-item:hover { background-color: var(--border); }
+        .file-item i { color: #f1fa8c; }
+
+        .dsa-container {
+            display: flex;
+            height: 100%;
+            gap: 15px;
+            position: relative;
+        }
+
+        .dsa-left-pane {
+            flex: 1;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .dsa-header {
+            background-color: var(--border);
+            padding: 10px 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-weight: bold;
+        }
+
+        .hamburger-btn {
+            background: none;
+            border: none;
+            color: var(--text-main);
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .hamburger-btn:hover { color: var(--accent); }
+
+        .dsa-content {
+            padding: 15px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .dsa-right-pane {
+            flex: 1.5;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .dsa-problem-menu {
+            position: absolute;
+            top: 40px;
+            left: 0;
+            width: 250px;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--accent);
+            border-radius: 5px;
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            max-height: 400px;
+            overflow-y: auto;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        .dsa-problem-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+        }
+        .dsa-problem-item:hover { background-color: var(--border); color: var(--accent); }
+
+        .test-case-card {
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border);
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 4px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="nav-left">
+            <h1>Code Guidance</h1>
+            <select id="view-selector" onchange="switchView(this.value)">
+                <option value="view-sandbox">Python Sandbox</option>
+                <option value="view-dsa">Solve DSA Questions</option>
+                <option value="view-compare">Compare Codes</option>
+                <option value="view-search">Smart Search</option>
+            </select>
+        </div>
+        <button class="settings-btn" onclick="openSettings()"><i class="fas fa-cog"></i></button>
+    </header>
+
+    <div class="container">
+        
+        <div id="view-sandbox" class="view-section active">
+            <div class="sidebar">
+                <h3 style="margin-top:0; color:var(--accent); font-size:14px;">EXPLORER</h3>
+                <div id="file-list" style="color:#8be9fd; font-size: 14px;">
+                    <i>No directory linked yet.</i>
+                </div>
+            </div>
+            
+            <div class="main-editor-area">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span id="current-filename" style="color: var(--accent); font-weight: bold; margin-right: 15px;">untitled.py</span>
+                        <button class="run-btn" style="background-color: var(--success);" onclick="saveActiveFile()"><i class="fas fa-save"></i> Save File</button>
+                        <button class="run-btn" style="background-color: var(--border); color: white;" onclick="createNewFile()"><i class="fas fa-plus"></i> New</button>
+                    </div>
+                    <button class="run-btn" onclick="runSandbox()"><i class="fas fa-play"></i> Run Code</button>
+                </div>
+                
+                <textarea id="sandbox-editor"></textarea>
+                
+                <div class="bottom-panel">
+                    <div class="terminal">
+                        <div class="terminal-header">TERMINAL OUTPUT</div>
+                        <div id="term-output" style="color: #f8f8f2;"></div>
+                    </div>
+                    <div class="ai-insights">
+                        <div class="terminal-header">AI INSIGHTS & COMPLEXITY</div>
+                        <div id="ai-output" style="color: #8be9fd;">Waiting for execution...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-dsa" class="view-section" style="padding: 15px;">
+            <div class="dsa-container">
+                
+                <div class="dsa-left-pane">
+                    <div class="dsa-header">
+                        <button class="hamburger-btn" onclick="toggleDSAMenu()"><i class="fas fa-bars"></i></button>
+                        <span id="dsa-title">Select a Problem...</span>
+                    </div>
+                    
+                    <div id="dsa-menu" class="dsa-problem-menu"></div>
+
+                    <div class="dsa-content">
+                        <div id="dsa-description" style="line-height: 1.6; color: #e9e9f4;">
+                            Click the hamburger menu to load a DSA problem from your database.
+                        </div>
+                        <div id="dsa-results" style="margin-top: 20px; border-top: 2px dashed var(--border); padding-top: 15px; display: none;">
+                            <h3 style="color: var(--accent); margin-top: 0;">Evaluation Results</h3>
+                            <div id="dsa-test-output"></div>
+                            <div id="dsa-ai-feedback" style="margin-top: 15px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dsa-right-pane">
+                    <div style="display: flex; gap: 10px;">
+                        <button class="run-btn" onclick="submitDSASolution()"><i class="fas fa-play"></i> Run & Submit</button>
+                        <button class="run-btn" style="background-color: var(--border); color: white;" onclick="showDSASolutionModal()"><i class="fas fa-eye"></i> Show Solution</button>
+                    </div>
+                    <textarea id="dsa-editor"># Write your solution here...</textarea>
+                </div>
+
+            </div>
+        </div>
+
+        <div id="view-compare" class="view-section" style="padding: 20px; flex-direction: column;">
+            <div style="display:flex; gap: 20px; flex: 1;">
+                <div style="flex:1; display:flex; flex-direction:column;">
+                    <h3>Code A</h3>
+                    <textarea id="comp-a"># Script A</textarea>
+                </div>
+                <div style="flex:1; display:flex; flex-direction:column;">
+                    <h3>Code B</h3>
+                    <textarea id="comp-b"># Script B</textarea>
+                </div>
+            </div>
+            <button class="run-btn" style="margin-top:15px;" onclick="runComparator()">Compare</button>
+            <div id="comp-result" class="terminal" style="margin-top:15px; height: 150px;">Awaiting comparison...</div>
+        </div>
+
+        <div id="view-search" class="view-section" style="padding: 20px; flex-direction: column;">
+            <h2 style="color: var(--accent); margin-top: 0;">Dual-Pane Smart Search</h2>
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <input type="text" id="search-query" placeholder="e.g., How do I reverse an array?" style="margin-bottom: 0;">
+                <button class="run-btn" onclick="runSearch()"><i class="fas fa-search"></i> Search</button>
+            </div>
+            
+            <div id="search-loader" class="loader" style="margin-bottom: 20px;"><i class="fas fa-spinner fa-spin"></i> Indexing vectors and searching...</div>
+            
+            <div class="split-pane" id="search-results-container" style="display: none; flex: 1; overflow: hidden;">
+                <div style="flex: 1; display: flex; flex-direction: column; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 5px; padding: 15px; overflow-y: auto;">
+                    <h3 style="color: #8be9fd; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-top: 0;"><i class="fas fa-folder-open"></i> Python Sandbox Matches</h3>
+                    <div id="sandbox-search-results"></div>
+                </div>
+                
+                <div style="flex: 1; display: flex; flex-direction: column; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 5px; padding: 15px; overflow-y: auto;">
+                    <h3 style="color: #ffb86c; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-top: 0;"><i class="fas fa-brain"></i> DSA Database Matches</h3>
+                    <div id="dsa-search-results"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="modal-settings" class="modal-overlay">
+        <div class="modal">
+            <h2 style="margin-top:0; color:var(--accent);">Playground Settings</h2>
+            <label>Link Local Directory:</label>
+            <input type="text" id="dir-path" placeholder="C:\Path\To\Scripts">
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
+                <button class="run-btn" onclick="saveSettings()">Save & Index</button>
+            </div>
+            <div id="modal-status" style="margin-top:10px; font-size:14px;"></div>
+        </div>
+    </div>
+
+    <div id="modal-solution" class="modal-overlay">
+        <div class="modal" style="width: 600px; max-height: 85vh; overflow-y: auto;">
+            <button class="close-btn" onclick="closeSolutionModal()"><i class="fas fa-times"></i></button>
+            <h2 style="margin-top:0; color:var(--success);"><i class="fas fa-check-circle"></i> Verified Solution</h2>
+            
+            <div id="solution-loader" style="color:var(--accent); display:none; margin: 20px 0;"><i class="fas fa-spinner fa-spin"></i> Fetching AI Analysis...</div>
+            
+            <div id="solution-content" style="display:none;">
+                <pre class="solution-code-box" id="solution-code-display"></pre>
+                
+                <div class="test-case-card" style="border-left: 4px solid #f1fa8c;">
+                    <h4 style="margin-top:0; color:#f1fa8c;">Solution Breakdown</h4>
+                    <strong id="solution-complexity"></strong><br><br>
+                    <strong>AI Logic Explanation:</strong><br>
+                    <div id="solution-ai-feedback"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://127.0.0.1:5000/api";
+        let edSandbox, edCompA, edCompB, edDSA;
+        let currentFileName = "untitled.py";
+        let currentDSAProblem = null;
+
+        window.onload = function() {
+            const config = { 
+                mode: "python", 
+                theme: "dracula", 
+                lineNumbers: true, 
+                matchBrackets: true,
+                indentUnit: 4,
+                tabSize: 4,
+                indentWithTabs: false,
+                extraKeys: {
+                    Tab: function(cm) {
+                        var spaces = Array(cm.getOption("indentUnit") + 1).join(" ");
+                        cm.replaceSelection(spaces);
+                    }
+                }
+            };
+            edSandbox = CodeMirror.fromTextArea(document.getElementById('sandbox-editor'), config);
+            edCompA = CodeMirror.fromTextArea(document.getElementById('comp-a'), config);
+            edCompB = CodeMirror.fromTextArea(document.getElementById('comp-b'), config);
+            edDSA = CodeMirror.fromTextArea(document.getElementById('dsa-editor'), config); 
+            
+            refreshFileList(); 
+            loadDSAMenu(); 
+        };
+
+        async function refreshFileList() {
+            try {
+                const res = await fetch(`${API_BASE}/files`);
+                const data = await res.json();
+                const listDiv = document.getElementById('file-list');
+                
+                if (data.files.length === 0) {
+                    listDiv.innerHTML = "<i>No .py files found.</i>";
+                    return;
+                }
+
+                listDiv.innerHTML = "";
+                data.files.forEach(file => {
+                    const el = document.createElement('div');
+                    el.className = "file-item";
+                    el.innerHTML = `<i class="fab fa-python"></i> ${file}`;
+                    el.onclick = () => openFile(file);
+                    listDiv.appendChild(el);
+                });
+            } catch (err) {
+                console.error("Could not load files.");
+            }
+        }
+
+        async function openFile(filename) {
+            try {
+                const res = await fetch(`${API_BASE}/files/read`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: filename })
+                });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    currentFileName = filename;
+                    document.getElementById('current-filename').innerText = filename;
+                    edSandbox.setValue(data.content);
+                    document.getElementById('term-output').innerHTML = "";
+                    document.getElementById('ai-output').innerHTML = "Ready.";
+                }
+            } catch (err) { alert("Error opening file."); }
+        }
+
+        async function saveActiveFile() {
+            if (currentFileName === "untitled.py") {
+                const newName = prompt("Enter a name for your file (e.g., script.py):");
+                if (!newName) return;
+                currentFileName = newName.endsWith('.py') ? newName : newName + '.py';
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/files/save`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: currentFileName, content: edSandbox.getValue() })
+                });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('current-filename').innerText = currentFileName;
+                    refreshFileList(); 
+                    
+                    const term = document.getElementById('term-output');
+                    term.innerHTML = "<i>File saved successfully!</i>";
+                    term.style.color = "var(--success)";
+                }
+            } catch (err) { alert("Failed to save file."); }
+        }
+
+        function createNewFile() {
+            currentFileName = "untitled.py";
+            document.getElementById('current-filename').innerText = currentFileName;
+            edSandbox.setValue("");
+            document.getElementById('term-output').innerHTML = "";
+            document.getElementById('ai-output').innerHTML = "New file ready.";
+        }
+
+        function switchView(viewId) {
+            document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            setTimeout(() => { 
+                edSandbox.refresh(); edCompA.refresh(); edCompB.refresh(); edDSA.refresh(); 
+            }, 10);
+        }
+
+        function openSettings() { document.getElementById('modal-settings').style.display = 'flex'; }
+        function closeSettings() { document.getElementById('modal-settings').style.display = 'none'; }
+        
+        function closeSolutionModal() { document.getElementById('modal-solution').style.display = 'none'; }
+
+        async function saveSettings() {
+            const path = document.getElementById('dir-path').value;
+            const status = document.getElementById('modal-status');
+            status.innerHTML = "Indexing...";
+            try {
+                const res = await fetch(`${API_BASE}/set_playground`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ directory_path: path })
+                });
+                const data = await res.json();
+                status.innerHTML = data.status === 'success' ? `<span style="color:var(--success)">${data.message}</span>` : `<span style="color:var(--error)">${data.message}</span>`;
+                setTimeout(closeSettings, 1500);
+            } catch (err) {
+                status.innerHTML = `<span style="color:var(--error)">Server Error</span>`;
+            }
+        }
+
+        async function runSandbox() {
+            const code = edSandbox.getValue();
+            const term = document.getElementById('term-output');
+            const ai = document.getElementById('ai-output');
+            
+            term.innerHTML = "Executing...";
+            ai.innerHTML = "Analyzing logic...";
+
+            try {
+                const res = await fetch(`${API_BASE}/compile`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    term.innerHTML = data.execution_output ? data.execution_output : '<i>(Program finished with no output)</i>';
+                    term.style.color = "var(--success)";
+                } else {
+                    term.innerHTML = data.error_type;
+                    term.style.color = "var(--error)";
+                }
+
+                ai.innerHTML = `<strong>Complexity:</strong> ${data.complexity}<br><br><strong>Logic:</strong><br>${data.ai_feedback}`;
+            } catch (err) {
+                term.innerHTML = "Connection failed.";
+                ai.innerHTML = "Backend offline.";
+            }
+        }
+
+        async function runComparator() {
+            const out = document.getElementById('comp-result');
+            out.innerHTML = "Comparing...";
+            try {
+                const res = await fetch(`${API_BASE}/compare`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code_a: edCompA.getValue(), code_b: edCompB.getValue() })
+                });
+                const data = await res.json();
+                out.innerHTML = `<strong>Match:</strong> ${data.similarity_score}<br><br>${data.ai_feedback}`;
+            } catch (err) { out.innerHTML = "Server Error"; }
+        }
+
+        async function runSearch() {
+            const query = document.getElementById('search-query').value;
+            const container = document.getElementById('search-results-container');
+            const sandboxDiv = document.getElementById('sandbox-search-results');
+            const dsaDiv = document.getElementById('dsa-search-results');
+            const loader = document.getElementById('search-loader');
+            
+            if (!query.trim()) return alert("Please enter a search query.");
+            
+            container.style.display = 'none';
+            loader.style.display = 'block';
+
+            try {
+                const res = await fetch(`${API_BASE}/search`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
+                });
+                const data = await res.json();
+                const generateHTML = (resultsArray) => {
+                    if (!resultsArray || resultsArray.length === 0) {
+                        return `<div style="color: var(--text-main); font-style: italic; margin-top: 10px;">No Matches Found.</div>`;
+                    }
+                    let html = "";
+                    resultsArray.forEach(r => {
+                        html += `<div class="test-case-card">
+                            <strong style="color: var(--success);">${r.match_percentage}% Match</strong><br>
+                            <em style="color: var(--accent);">${r.file_path}</em><br>
+                            <div style="background:#000; padding:10px; color:#aaa; margin-top: 5px; font-family: monospace; font-size: 13px; border-radius: 4px;">${r.content_snippet}</div>
+                        </div>`;
+                    });
+                    return html;
+                };
+
+                sandboxDiv.innerHTML = generateHTML(data.results.sandbox);
+                dsaDiv.innerHTML = generateHTML(data.results.dsa);
+                
+            } catch (err) {
+                sandboxDiv.innerHTML = `<span style="color:var(--error)">Failed to connect to backend.</span>`;
+                dsaDiv.innerHTML = `<span style="color:var(--error)">Failed to connect to backend.</span>`;
+            }
+            
+            loader.style.display = 'none';
+            container.style.display = 'flex';
+        }
+
+        function toggleDSAMenu() {
+            const menu = document.getElementById('dsa-menu');
+            menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+        }
+
+        async function loadDSAMenu() {
+            try {
+                const res = await fetch(`${API_BASE}/dsa/problems`);
+                const data = await res.json();
+                const menu = document.getElementById('dsa-menu');
+                menu.innerHTML = "";
+                
+                if (data.problems.length === 0) {
+                    menu.innerHTML = `<div class="dsa-problem-item">No JSON problems found in DSA folder.</div>`;
+                    return;
+                }
+
+                data.problems.forEach(prob => {
+                    const item = document.createElement('div');
+                    item.className = "dsa-problem-item";
+                    item.innerText = prob.title;
+                    item.onclick = () => {
+                        fetchDSAProblem(prob.filename);
+                        toggleDSAMenu();
+                    };
+                    menu.appendChild(item);
+                });
+            } catch (err) { console.error("Failed to load DSA menu"); }
+        }
+
+        async function fetchDSAProblem(filename) {
+            try {
+                const res = await fetch(`${API_BASE}/dsa/problem/${filename}`);
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    currentDSAProblem = data.data;
+                    document.getElementById('dsa-title').innerText = currentDSAProblem.title;
+                    
+                    let descHtml = currentDSAProblem.description.replace(/\n/g, '<br>');
+                    document.getElementById('dsa-description').innerHTML = descHtml;
+                    
+                    document.getElementById('dsa-results').style.display = 'none';
+                    edDSA.setValue("# Write your solution for " + currentDSAProblem.title + "\n\n");
+                }
+            } catch (err) { alert("Error loading problem."); }
+        }
+
+        async function submitDSASolution() {
+            if (!currentDSAProblem) return alert("Please select a problem first.");
+            
+            const userCode = edDSA.getValue();
+            const resultsDiv = document.getElementById('dsa-results');
+            const outputDiv = document.getElementById('dsa-test-output');
+            const aiDiv = document.getElementById('dsa-ai-feedback');
+            
+            resultsDiv.style.display = 'block';
+            outputDiv.innerHTML = `<span style="color:var(--accent)"><i class="fas fa-spinner fa-spin"></i> Running test cases...</span>`;
+            aiDiv.innerHTML = "";
+
+            try {
+                const evalRes = await fetch(`${API_BASE}/dsa/evaluate`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: userCode, test_cases: currentDSAProblem.test_cases })
+                });
+                const evalData = await evalRes.json();
+                
+                let tcHtml = "";
+                evalData.test_results.forEach(tc => {
+                    if (tc.status === "Passed") {
+                        tcHtml += `<div class="test-case-card" style="border-left: 4px solid var(--success);">
+                            <strong>Case ${tc.case}:</strong> <span style="color:var(--success)">PASSED</span></div>`;
+                    } else if (tc.status === "Error") {
+                        tcHtml += `<div class="test-case-card" style="border-left: 4px solid var(--error);">
+                            <strong>Case ${tc.case}:</strong> <span style="color:var(--error)">CRASHED</span><br>
+                            <span style="color:#ffb86c">${tc.details}</span></div>`;
+                    } else {
+                        tcHtml += `<div class="test-case-card" style="border-left: 4px solid var(--error);">
+                            <strong>Case ${tc.case}:</strong> <span style="color:var(--error)">FAILED</span><br>
+                            Input: <code>${tc.input.replace(/\n/g, ' ')}</code><br>
+                            Expected: <code>${tc.expected}</code><br>
+                            Actual: <code>${tc.actual}</code></div>`;
+                    }
+                });
+                
+                if (evalData.success) {
+                    tcHtml += `<br><strong style="color:var(--success)">All tests passed! Predicted Complexity: ${evalData.predicted_complexity}</strong>`;
+                }
+                outputDiv.innerHTML = tcHtml;
+
+            } catch (err) {
+                outputDiv.innerHTML = `<span style="color:var(--error)">Server error during test case evaluation.</span>`;
+                return;
+            }
+
+            aiDiv.innerHTML = `<div class="test-case-card" style="border-left: 4px solid var(--accent); color: var(--accent);">
+                <i class="fas fa-spinner fa-spin"></i> Generating AI similarity analysis...
+            </div>`;
+
+            try {
+                const compRes = await fetch(`${API_BASE}/compare`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code_a: userCode, code_b: currentDSAProblem.actual_solution })
+                });
+                const compData = await compRes.json();
+                
+                const safeFeedback = compData.ai_feedback.replace(/\n/g, '<br>');
+                
+                aiDiv.innerHTML = `<div class="test-case-card" style="border-left: 4px solid var(--accent);">
+                    <h4 style="margin-top:0; color:var(--accent);">Logic Match against Actual Solution</h4>
+                    <strong>Structural Match:</strong> ${compData.similarity_score}
+                    <br><br>
+                    <button class="run-btn" style="background-color: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 5px 10px; font-size: 13px;" onclick="revealAIComparison(this)">Match with Actual Solution</button>
+                    
+                    <div id="spoiler-ai-feedback" style="display: none; margin-top: 15px; border-top: 1px dashed var(--border); padding-top: 10px; color: #f8f8f2;">
+                        ${safeFeedback}
+                    </div>
+                </div>`;
+                
+            } catch (err) {
+                aiDiv.innerHTML = `<span style="color:var(--error)">Failed to load AI comparison.</span>`;
+            }
+        }
+
+        function revealAIComparison(btnElement) {
+            const spoilerDiv = document.getElementById('spoiler-ai-feedback');
+            if (spoilerDiv.style.display === 'none') {
+                spoilerDiv.style.display = 'block';
+                btnElement.innerHTML = '<i class="fas fa-eye-slash"></i> Hide AI Comparison';
+            } else {
+                spoilerDiv.style.display = 'none';
+                btnElement.innerHTML = 'Match with Actual Solution';
+            }
+        }
+
+        async function showDSASolutionModal() {
+            if (!currentDSAProblem) return alert("Please select a problem first.");
+            
+            document.getElementById('modal-solution').style.display = 'flex';
+            document.getElementById('solution-loader').style.display = 'block';
+            document.getElementById('solution-content').style.display = 'none';
+            
+            document.getElementById('solution-code-display').innerText = currentDSAProblem.actual_solution;
+
+            try {
+                const res = await fetch(`${API_BASE}/analyze_static`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: currentDSAProblem.actual_solution })
+                });
+                const data = await res.json();
+                
+                document.getElementById('solution-complexity').innerHTML = `Complexity: ${data.complexity}`;
+                document.getElementById('solution-ai-feedback').innerHTML = data.ai_feedback.replace(/\n/g, '<br>');
+                
+                document.getElementById('solution-loader').style.display = 'none';
+                document.getElementById('solution-content').style.display = 'block';
+            } catch (err) {
+                document.getElementById('solution-loader').innerHTML = "Failed to fetch AI explanation.";
+            }
+        }
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+    "0": "Sublinear (O(1) / O(log n))",
+    "1": "Linear (O(n))",
+    "2": "Near-linear (O(n log n))",
+    "3": "Polynomial+ (O(n^2) and above)"
+}
